@@ -1,12 +1,12 @@
 /* eslint-disable max-classes-per-file */
-const Y = require('yjs');
-const syncProtocol = require('y-protocols/dist/sync.cjs');
-const awarenessProtocol = require('y-protocols/dist/awareness.cjs');
 
-const encoding = require('lib0/dist/encoding.cjs');
-const decoding = require('lib0/dist/decoding.cjs');
+import * as Y from 'yjs';
+import * as syncProtocol from 'y-protocols/sync.js';
+import * as awarenessProtocol from 'y-protocols/awareness.js';
 
-const debounce = require('lodash.debounce');
+import * as encoding from 'lib0/encoding.js';
+import * as decoding from 'lib0/decoding.js';
+import debounce from 'lodash/debounce.js';
 
 // This is the Edge Worker, built using Durable Objects!
 
@@ -149,7 +149,7 @@ const send = (doc, conn, m) => {
   }
 };
 
-const updateHandler = (update, _origin, doc) => {
+export const updateHandler = (update, _origin, doc) => {
   const encoder = encoding.createEncoder();
   encoding.writeVarUint(encoder, messageSync);
   syncProtocol.writeUpdate(encoder, update);
