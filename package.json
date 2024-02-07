@@ -3,29 +3,38 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "lint:js": "eslint src/edge.mjs",
+    "lint:js": "eslint src/edge.js",
     "lint": "npm run lint:js",
-    "dev": "wrangler dev src/edge.mjs",
-    "deploy": "wrangler deploy src/edge.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "wrangler dev src/edge.js",
+    "deploy": "wrangler deploy src/edge.js",
+    "test": "c8 mocha"
+  },
+  "mocha": {
+    "reporter": "mocha-multi-reporters",
+    "reporter-options": "configFile=.mocha-multi.json"
   },
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
     "@babel/core": "7.17.7",
     "@babel/eslint-parser": "7.17.0",
+    "c8": "^9.1.0",
     "eslint": "^8.11.0",
     "eslint-config-airbnb-base": "15.0.0",
     "eslint-plugin-chai-friendly": "^0.7.2",
     "eslint-plugin-compat": "^4.0.2",
     "eslint-plugin-ecmalist": "^1.0.8",
     "eslint-plugin-import": "2.25.4",
+    "mocha": "^10.2.0",
+    "mocha-junit-reporter": "^2.2.1",
+    "mocha-multi-reporters": "^1.5.1",
     "wrangler": "^3.22.4"
   },
   "dependencies": {
     "lib0": "^0.2.52",
-    "lodash.debounce": "^4.0.8",
+    "lodash": "^4.17.21",
     "ws": "^6.2.1",
     "y-protocols": "^1.0.5",
     "yjs": "^13.5.0"
