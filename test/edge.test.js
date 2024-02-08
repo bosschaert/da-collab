@@ -13,6 +13,10 @@ import assert from 'assert';
 import { updateHandler } from '../src/edge.js';
 
 describe('Collab Test Suite', () => {
+  it('Failing test', () => {
+    assert(false);
+  });
+
   it('Test updateHandler', () => {
     const conn = {
       isClosed: false,
