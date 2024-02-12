@@ -49,12 +49,48 @@ async function handleErrors(request, func) {
   }
 }
 
-async function handleApiRequest(name, request, env) {
-  // We've received at API request. Route the request based on the path.
+async function handleApiRequest(request, env) {
+  // We've received at API request.
+  const auth = new URL(request.url).searchParams.get('Authorization');
 
-  // Each Durable Object has a 256-bit unique ID. IDs can be derived from string names, or
-  // chosen randomly by the system.
-  const id = env.rooms.idFromName(name);
+  // We need to massage the path somewhat because on connections from localhost safari sends
+  // a path with only one slash for some reason.
+  let docName = request.url.substring(new URL(request.url).origin.length + 1)
+    .replace('https:/admin.da.live', 'https://admin.da.live')
+    .replace('http:/localhost', 'http://localhost');
+
+  if (docName.indexOf('?') > 0) {
+    docName = docName.substring(0, docName.indexOf('?'));
+  }
+
+  // Make sure we only work with da.live or localhost
+  if (!docName.startsWith('https://admin.da.live/')
+      && !docName.startsWith('https://stage-admin.da.live/')
+      && !docName.startsWith('http://localhost:')) {
+    return new Response('unable to get resource', { status: 404 });
+  }
+
+  // Check if we have the authorization for the room (this is a poor man's solution as right now
+  // only da-admin knows).
+  try {
+    const opts = { method: 'HEAD' };
+    if (auth) {
+      opts.headers = new Headers({ Authorization: auth });
+    }
+    const initialReq = await fetch(docName, opts);
+    if (!initialReq.ok && initialReq.status !== 404) {
+      // eslint-disable-next-line no-console
+      console.log(`${initialReq.status} - ${initialReq.statusText}`);
+      return new Response('unable to get resource', { status: initialReq.status });
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.log(err);
+    return new Response('unable to get resource', { status: 500 });
+  }
+
+  // Each Durable Object has a 256-bit unique ID. Route the request based on the path.
+  const id = env.rooms.idFromName(docName);
 
   // Get the Durable Object stub for this room! The stub is a client object that can be used
   // to send messages to the remote Durable Object instance. The stub is returned immediately;
@@ -65,25 +101,23 @@ async function handleApiRequest(name, request, env) {
   const roomObject = env.rooms.get(id);
 
   // eslint-disable-next-line no-console
-  console.log(`FETCHING: ${name} ${id}`);
+  console.log(`FETCHING: ${docName} ${id}`);
 
+  const headers = [...request.headers, ['X-collab-room', docName]];
+  if (auth) {
+    headers.push(['Authorization', auth]);
+  }
+  const req = new Request(new URL(docName), { headers });
   // Send the request to the object. The `fetch()` method of a Durable Object stub has the
   // same signature as the global `fetch()` function, but the request is always sent to the
   // object, regardless of the request's URL.
-  return roomObject.fetch(new URL(request.url), request);
+  return roomObject.fetch(req);
 }
 
 // In modules-syntax workers, we use `export default` to export our script's main event handlers.
 export default {
   async fetch(request, env) {
-    return handleErrors(request, async () => {
-      // We have received an HTTP request!
-      let name = request.url;
-      if (request.url.indexOf('?') > 0) {
-        name = name.substring(0, request.url.indexOf('?'));
-      }
-      return handleApiRequest(name, request, env);
-    });
+    return handleErrors(request, async () => handleApiRequest(request, env));
   },
 };
 
@@ -97,7 +131,21 @@ const persistence = {
   bindState: async (docName, ydoc, conn) => {
     const persistedYdoc = new Y.Doc();
     const aemMap = persistedYdoc.getMap('aem');
-    aemMap.set('initial', conn.initial);
+    const initalOpts = {};
+    if (conn.auth) {
+      initalOpts.headers = new Headers({ Authorization: conn.auth });
+    }
+    const initialReq = await fetch(docName, initalOpts);
+    if (initialReq.ok) {
+      aemMap.set('initial', await initialReq.text());
+    } else if (initialReq.status === 404) {
+      aemMap.set('initial', '');
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
+      throw new Error(`unable to get resource - status: ${initialReq.status}`);
+    }
+
     Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
     let last = aemMap.get('initial');
     ydoc.on('update', debounce(async () => {
@@ -253,8 +301,7 @@ const setupWSConnection = async (conn, docName) => {
   conn.binaryType = 'arraybuffer';
   // get doc, initialize if it does not exist yet
   const doc = await getYDoc(docName, conn, true);
-  // eslint-disable-next-line no-param-reassign
-  conn.initial = undefined;
+
   doc.conns.set(conn, new Set());
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));
@@ -303,81 +350,42 @@ export class DocRoom {
   // directly from the internet. In the future, we will support other formats than HTTP for these
   // communications, but we started with HTTP for its familiarity.
   async fetch(request) {
-    return handleErrors(request, async () => {
-      if (request.headers.get('Upgrade') !== 'websocket') {
-        return new Response('expected websocket', { status: 400 });
-      }
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return new Response('expected websocket', { status: 400 });
+    }
+    const auth = request.headers.get('Authorization');
+    const docName = request.headers.get('X-collab-room');
 
-      const auth = new URL(request.url).searchParams.get('Authorization');
+    if (!docName) {
+      return new Response('expected docName', { status: 400 });
+    }
 
-      let docName = request.url.substring(new URL(request.url).origin.length + 1)
-        .replace('https:/admin.da.live', 'https://admin.da.live')
-        .replace('http:/localhost', 'http://localhost');
+    // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
+    // i.e. two WebSockets that talk to each other), we return one end of the pair in the
+    // response, and we operate on the other end. Note that this API is not part of the
+    // Fetch API standard; unfortunately, the Fetch API / Service Workers specs do not define
+    // any way to act as a WebSocket server today.
+    // eslint-disable-next-line no-undef
+    const pair = new WebSocketPair();
 
-      if (docName.indexOf('?') > 0) {
-        docName = docName.substring(0, docName.indexOf('?'));
-      }
+    // We're going to take pair[1] as our end, and return pair[0] to the client.
+    await this.handleSession(pair[1], docName, auth);
 
-      // Make sure we only work with da.live or localhost
-      if (!docName.startsWith('https://admin.da.live/')
-          && !docName.startsWith('https://stage-admin.da.live/')
-          && !docName.startsWith('http://localhost:')) {
-        return new Response('unable to get resource', { status: 404 });
-      }
-
-      let initial = '';
-
-      // Check if we have the authorization for the room (this is a poor man's solution as right now
-      // only da-admin knows). As a side effect we can use the result as the initial value if the
-      // room doesn't exist yet.
-      try {
-        const opts = {};
-        if (auth) {
-          opts.headers = new Headers({ Authorization: auth });
-        }
-        const initialReq = await fetch(docName, opts);
-        if (initialReq.ok) {
-          initial = await initialReq.text();
-        } else if (initialReq.status !== 404) {
-          // eslint-disable-next-line no-console
-          console.log(`${initialReq.status} - ${initialReq.statusText}`);
-          return new Response('unable to get resource', { status: initialReq.status });
-        }
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.log(err);
-        return new Response('unable to get resource', { status: 500 });
-      }
-
-      // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
-      // i.e. two WebSockets that talk to each other), we return one end of the pair in the
-      // response, and we operate on the other end. Note that this API is not part of the
-      // Fetch API standard; unfortunately, the Fetch API / Service Workers specs do not define
-      // any way to act as a WebSocket server today.
-      // eslint-disable-next-line no-undef
-      const pair = new WebSocketPair();
-
-      // We're going to take pair[1] as our end, and return pair[0] to the client.
-      await this.handleSession(pair[1], docName, auth, initial);
-
-      // Now we return the other end of the pair to the client.
-      return new Response(null, { status: 101, webSocket: pair[0] });
-    });
+    // Now we return the other end of the pair to the client.
+    return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
   // handleSession() implements our WebSocket-based protocol.
   // eslint-disable-next-line class-methods-use-this
-  async handleSession(webSocket, docName, auth, initial) {
+  async handleSession(webSocket, docName, auth) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
     // eslint-disable-next-line no-param-reassign
     webSocket.auth = auth;
-    // eslint-disable-next-line no-param-reassign
-    webSocket.initial = initial;
-
     // eslint-disable-next-line no-console
-    console.log(`GET ${docName} with auth(${webSocket.auth ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
+    console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
+      ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
     await setupWSConnection(webSocket, docName);
   }
 }
