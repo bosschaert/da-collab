@@ -215,7 +215,7 @@ export const updateHandler = (update, _origin, doc) => {
   doc.conns.forEach((_, conn) => send(doc, conn, message));
 };
 
-class WSSharedDoc extends Y.Doc {
+export class WSSharedDoc extends Y.Doc {
   constructor(name) {
     super({ gc: gcEnabled });
     this.name = name;

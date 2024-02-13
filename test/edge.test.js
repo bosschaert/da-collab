@@ -10,7 +10,32 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { updateHandler } from '../src/edge.js';
+import { updateHandler, WSSharedDoc } from '../src/edge.js';
+
+function isSubArray(full, sub) {
+  if (sub.length === 0) {
+    return true;
+  }
+
+  const candidateIdxs = [];
+  for (let i = 0; i < full.length; i++) {
+    if (full[i] === sub[0]) {
+      candidateIdxs.push(i);
+    }
+  }
+
+  nextCandidate:
+  for (let i = 0; i < candidateIdxs.length; i++) {
+    for (let j = 0; j < sub.length; j++) {
+      if (sub[j] !== full[candidateIdxs[i] + j]) {
+        break nextCandidate;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
 
 describe('Collab Test Suite', () => {
   it('Test updateHandler', () => {
@@ -29,13 +54,11 @@ describe('Collab Test Suite', () => {
       },
     };
 
-    const fe = (func) => {
-      func(null, conn);
-    };
-
     const deleted = [];
     const conns = {
-      forEach: fe,
+      forEach(f) {
+        f(null, conn);
+      },
       has(c) {
         return c === conn;
       },
@@ -96,5 +119,32 @@ describe('Collab Test Suite', () => {
     assert.deepStrictEqual(deleted, [conn1, conn2]);
     assert.deepStrictEqual(update, conn1.message.slice(-4));
     assert.deepStrictEqual(update, conn2.message.slice(-4));
+  });
+
+  it('Test WSSharedDoc', () => {
+    const doc = new WSSharedDoc('hello');
+    assert.equal(doc.name, 'hello');
+    assert.equal(doc.awareness.getLocalState(), null);
+
+    const conn = {
+      isClosed: false,
+      message: null,
+      readyState: 1, // wsReadyStateOpen
+      has() {
+        return true;
+      },
+      close() {
+        this.isClosed = true;
+      },
+      send(m) {
+        this.message = m;
+      },
+    };
+
+    doc.conns.set(conn, 'conn1');
+    doc.awareness.setLocalState('foo');
+    assert(conn.isClosed === false);
+    const fooAsUint8Arr = new Uint8Array(['f'.charCodeAt(0), 'o'.charCodeAt(0), 'o'.charCodeAt(0)]);
+    assert(isSubArray(conn.message, fooAsUint8Arr));
   });
 });

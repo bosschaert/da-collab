@@ -9,7 +9,8 @@
     "lint": "npm run lint:js",
     "dev": "wrangler dev src/edge.js",
     "deploy": "wrangler deploy src/edge.js",
-    "test": "c8 mocha"
+
+    "test": "c8 mocha --exit # --exit is needed because some test code triggers async listeners"
   },
   "mocha": {
     "reporter": "mocha-multi-reporters",
