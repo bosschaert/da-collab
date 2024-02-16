@@ -53,7 +53,7 @@ async function syncAdmin(url, request, env) {
   const id = env.rooms.idFromName(doc);
   const roomObject = env.rooms.get(id);
 
-  return roomObject.fetch(new URL(`${doc}?api=syncAdmin`), request);
+  return roomObject.fetch(new URL(`${doc}?api=syncAdmin`));
 }
 
 async function handleApiCall(url, request, env) {
@@ -61,11 +61,11 @@ async function handleApiCall(url, request, env) {
     case '/api/v1/syncadmin':
       return syncAdmin(url, request, env);
     default:
-      return new Response('Bad request', { status: 400 });
+      return new Response('Bad Request', { status: 400 });
   }
 }
 
-async function handleApiRequest(request, env) {
+export async function handleApiRequest(request, env) {
   // We've received at API request.
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) {
