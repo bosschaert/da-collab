@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { updateHandler, WSSharedDoc } from '../src/edge.js';
+import { updateHandler, WSSharedDoc } from '../src/shareddoc.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
