@@ -162,6 +162,9 @@ const getYDoc = async (docname, conn, gc = true) => {
 
 export const getYDocIfPresent = (docname) => docs.get(docname);
 
+// For testing
+export const setYDoc = (docname, ydoc) => docs.set(docname, ydoc);
+
 const messageListener = (conn, doc, message) => {
   try {
     const encoder = encoding.createEncoder();

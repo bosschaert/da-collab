@@ -159,6 +159,12 @@ export class DocRoom {
   }
 
   // eslint-disable-next-line class-methods-use-this
+  async callGlobalFetch(url, options) {
+    // isolated for testing
+    return /* global */ fetch(url, options);
+  }
+
+  // eslint-disable-next-line class-methods-use-this
   async syncFromAdmin(doc) {
     // eslint-disable-next-line no-console
     console.log('syncFromAdmin', doc);
@@ -169,7 +175,7 @@ export class DocRoom {
     }
 
     // TODO what about auth?
-    const resp = await fetch(doc, {});
+    const resp = await this.callGlobalFetch(doc, {});
     const svrContent = await resp.text();
     // eslint-disable-next-line no-console
     console.log('Obtained from server', svrContent);

@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { handleApiRequest } from '../src/edge.js';
+
+import { DocRoom, handleApiRequest } from '../src/edge.js';
+import { setYDoc } from '../src/shareddoc.js';
 
 function hash(str) {
   let hash = 0;
@@ -72,5 +74,56 @@ describe('Worker test suite', () => {
     const resp = await handleApiRequest(req, null);
     assert.equal(400, resp.status, 'Doc wasnt set so should return a 400 for invalid');
     assert.equal('Bad Request', await resp.text());
+  });
+
+  it('Docroom syncAdmin', async () => {
+    const aemMap = new Map();
+
+    const mockYdoc = {
+      getMap(name) { return name === 'aem' ? aemMap : null; }
+    };
+    setYDoc('http://foobar.com/a/b/c.html', mockYdoc);
+
+    const mockFetch = async (url) => {
+      if (url === 'http://foobar.com/a/b/c.html') {
+        return new Response('Document content', { status: 200 });
+      }
+      return null;
+    }
+
+    const dr = new DocRoom({ storage: null }, null);
+    dr.callGlobalFetch = mockFetch;
+
+    const req = {
+      url: 'http://foobar.com/a/b/c.html?api=syncAdmin'
+    };
+
+    assert(!aemMap.get('svrupd'), 'Precondition');
+    const resp = await dr.fetch(req)
+
+    assert.equal(200, resp.status);
+    assert.equal('Document content', aemMap.get('svrupd'));
+  });
+
+  it('Unknown doc update request gives 404', async () => {
+    const dr = new DocRoom({ storage: null }, null);
+    dr.callGlobalFetch = async () => new Response(null, { status: 418 });
+
+    const req = {
+      url: 'http://foobar.com/a/b/d/e/f.html?api=syncAdmin'
+    };
+    const resp = await dr.fetch(req)
+
+    assert.equal(404, resp.status);
+  });
+
+  it('Unknown DocRoom API call gives 400', async () => {
+    const dr = new DocRoom({ storage: null }, null);
+    const req = {
+      url: 'http://foobar.com/a.html?api=blahblahblah'
+    };
+    const resp = await dr.fetch(req)
+
+    assert.equal(400, resp.status);
   });
 });
