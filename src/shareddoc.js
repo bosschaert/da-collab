@@ -49,7 +49,7 @@ const send = (doc, conn, m) => {
 };
 
 export const persistence = {
-  fetch: async (url, opts) => fetch(url, opts),
+  fetch: fetch.bind(this),
   get: async (docName, auth) => {
     const initalOpts = {};
     if (auth) {
