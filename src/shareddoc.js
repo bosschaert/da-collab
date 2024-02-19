@@ -49,7 +49,7 @@ const send = (doc, conn, m) => {
 };
 
 export const persistence = {
-  fetch,
+  fetch: async (url, opts) => fetch(url, opts),
   get: async (docName, auth) => {
     const initalOpts = {};
     if (auth) {
@@ -77,7 +77,10 @@ export const persistence = {
       .map((con) => con.auth);
 
     if (auth.length > 0) {
-      opts.headers = new Headers({ Authorization: [...new Set(auth)].join(',') });
+      opts.headers = new Headers({
+        Authorization: [...new Set(auth)].join(','),
+        'X-Initiator': 'collab',
+      });
     }
 
     const { ok, status, statusText } = await persistence.fetch(ydoc.name, opts);
@@ -88,12 +91,25 @@ export const persistence = {
       statusText,
     };
   },
+  invalidate: async (ydoc) => {
+    const auth = Array.from(ydoc.conns.keys())
+      .map((con) => con.auth);
+    const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
+
+    const svrContent = await persistence.get(ydoc.name, authHeader);
+    const aemMap = ydoc.getMap('aem');
+    const cliContent = aemMap.get('content');
+    if (svrContent !== cliContent) {
+      // Only update the client if they're different
+      aemMap.set('svrupd', svrContent);
+    }
+  },
   update: async (ydoc, current) => {
     let closeAll = false;
     try {
       const content = ydoc.getMap('aem').get('content');
       if (current !== content) {
-        const { ok, status, statusText } = await persistence.store(ydoc, content);
+        const { ok, status, statusText } = await persistence.put(ydoc, content);
 
         if (!ok) {
           closeAll = status === 401;
@@ -188,6 +204,9 @@ const getYDoc = async (docname, conn, gc = true) => {
   return doc;
 };
 
+// For testing
+export const setYDoc = (docname, ydoc) => docs.set(docname, ydoc);
+
 const messageListener = (conn, doc, message) => {
   try {
     const encoder = encoding.createEncoder();
@@ -218,6 +237,15 @@ const messageListener = (conn, doc, message) => {
     console.error(err);
     doc.emit('error', [err]);
   }
+};
+
+export const invalidateFromAdmin = async (docName) => {
+  const ydoc = docs.get(docName);
+  if (ydoc) {
+    await persistence.invalidate(ydoc);
+    return true;
+  }
+  return false;
 };
 
 export const setupWSConnection = async (conn, docName) => {
