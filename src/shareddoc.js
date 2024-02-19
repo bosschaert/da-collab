@@ -49,7 +49,7 @@ const send = (doc, conn, m) => {
 };
 
 export const persistence = {
-  fetch,
+  fetch: fetch.bind(this),
   get: async (docName, auth) => {
     const initalOpts = {};
     if (auth) {
@@ -93,7 +93,7 @@ export const persistence = {
     try {
       const content = ydoc.getMap('aem').get('content');
       if (current !== content) {
-        const { ok, status, statusText } = await persistence.store(ydoc, content);
+        const { ok, status, statusText } = await persistence.put(ydoc, content);
 
         if (!ok) {
           closeAll = status === 401;
