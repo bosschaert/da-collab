@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { updateHandler, WSSharedDoc } from '../src/shareddoc.js';
+import { updateHandler, WSSharedDoc, persistence } from '../src/shareddoc.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
@@ -146,5 +146,33 @@ describe('Collab Test Suite', () => {
     assert(conn.isClosed === false);
     const fooAsUint8Arr = new Uint8Array(['f'.charCodeAt(0), 'o'.charCodeAt(0), 'o'.charCodeAt(0)]);
     assert(isSubArray(conn.message, fooAsUint8Arr));
+  });
+
+  it('Test persistence put ok', async () =>{
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, 'PUT');
+      assert(opts.headers === undefined);
+      assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: true, status: 200, statusText: 'OK'};
+    };
+    const result = await persistence.put({ name: 'foo', conns: new Map()}, 'test');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.equal(result.statusText, 'OK');
+  });
+
+  it('Test persistence put auth', async () =>{
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, 'PUT');
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: false, status: 401, statusText: 'Unauth'};
+    };
+    const result = await persistence.put({ name: 'foo', conns: new Map().set({ auth: 'auth' }, new Set())}, 'test');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 401);
+    assert.equal(result.statusText, 'Unauth');
   });
 });
